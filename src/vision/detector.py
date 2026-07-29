@@ -3,7 +3,7 @@ import cv2
 import time
 import os
 from ultralytics import YOLO
-from src.vision.camera import Camera
+from camera import Camera
 
 
 class Detector:
@@ -117,7 +117,7 @@ if __name__ == "__main__":
     _DEFAULT_MODEL = os.path.join(_PROJECT_ROOT, 'src', 'yolo_det', 'best_rknn_model')
 
     try:
-        cam = Camera(index=3, width=640, height=480, fps=120)
+        cam = Camera(index=0, width=640, height=480, fps=120)
     except Exception as e:
         print(f"Camera index=3 failed ({e}), trying index=1 ...")
         cam = Camera(index=1)
