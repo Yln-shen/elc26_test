@@ -1,6 +1,7 @@
 # src/vision/tracker.py
 # 1D steel-ball tracker — pixel-space Kalman → mm conversion for motor control
 import time
+import cv2
 from Kalman import AdaptiveEKF1D
 
 
@@ -194,8 +195,49 @@ class Tracker:
         return self.predict
 
     # ==================================================================
-    # Internal helpers
+    # Debug drawing
     # ==================================================================
+
+    def draw_debug(self, frame):
+        """
+        Draw filtered ball centre + compact info panel on *frame* (no copy).
+
+        - Yellow cross ✕ = Kalman-filtered position (compare with green dot = raw)
+        - Info panel at bottom-left, never overlaps detector's top-left texts
+        """
+        if self.position_px is None or not self.if_find:
+            return
+
+        cx = int(self.position_px)
+        marker_y = frame.shape[0] * 3 // 5
+        s = 6
+
+        # yellow cross (filtered position) — compare with detector's green dot
+        cv2.line(frame, (cx - s, marker_y - s), (cx + s, marker_y + s),
+                 (0, 255, 255), 2)
+        cv2.line(frame, (cx - s, marker_y + s), (cx + s, marker_y - s),
+                 (0, 255, 255), 2)
+
+        # vertical tick on the pipe line
+        cv2.line(frame, (cx, marker_y - s - 1), (cx, marker_y + s + 1),
+                 (0, 255, 255), 1)
+
+        # info panel — bottom-left
+        h = frame.shape[0]
+        lines = []
+        if self.position_mm is not None:
+            tag = "PRED" if self.predict else "TRACK"
+            lines.append(f"{tag}  {self.position_mm:+.1f} mm")
+        if self.raw_position_mm is not None:
+            lines.append(f"raw  {self.raw_position_mm:+.1f} mm")
+        if self.kf.is_initialized:
+            lines.append(f"vel  {self.get_velocity_mm_s():+.1f} mm/s")
+
+        y = h - 12 * len(lines) - 4
+        for line in lines:
+            cv2.putText(frame, line, (8, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+            y += 14
 
     def _px_to_mm(self, px):
         """Convert pixel x-coordinate → mm  (left = positive)."""
@@ -281,18 +323,18 @@ if __name__ == "__main__":
         # ---- draw ----
         detector.draw(frame)
 
-        # status overlay
-        cv2.putText(frame, f"FPS: {fps_last}", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        # ---- tracker debug overlay (bottom-left info + filtered marker) ----
+        tracker.draw_debug(frame)
+
+        # ---- top-left status (no overlap with detector's "No detection" at L60) ----
+        cv2.putText(frame, f"FPS: {fps_last}", (10, 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
 
         if pos_mm is not None:
             tag = "PRED" if tracker.is_predicting() else "TRACK"
             color = (0, 200, 255) if tracker.is_predicting() else (0, 255, 0)
-            cv2.putText(frame, f"{tag} | {pos_mm:+.1f} mm", (10, 60),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-        else:
-            cv2.putText(frame, "LOST", (10, 60),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            cv2.putText(frame, f"{tag}  {pos_mm:+.1f} mm", (10, 44),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
         cv2.imshow("Tracker", frame)
 
