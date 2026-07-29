@@ -17,19 +17,24 @@ class Detector:
     (y-axis first, x-axis tiebreaker).
     """
 
-    def __init__(self, model_path, conf_threshold=0.20, roi=None):
+    def __init__(self, model_path, conf_threshold=0.20, roi=None, debug=False):
         """
         Args:
             model_path:    path to YOLO model directory or .rknn file
-            conf_threshold: confidence threshold
+            conf_threshold: normal confidence threshold
             roi:           (x, y, w, h) top-left + size in pixels, or None
+            debug:         if True, lower internal threshold to 0.05 and
+                           show all raw detections with confidence labels
         """
         self.model = YOLO(model_path)
         self.conf_threshold = conf_threshold
-        self.roi = roi                # (x, y, w, h) or None
+        self.roi = roi
+        self.debug = debug
         self.selected_ball = None     # (cx, cy) in full-frame coords
         self._box = None              # (x1, y1, x2, y2, conf) in full-frame coords
         self.frame_center = None
+        self._debug_max_conf = 0.0    # highest conf seen this frame (even if filtered)
+        self._debug_raw_count = 0     # raw box count before filtering
 
         # cache hot cv2 functions
         self._rect = cv2.rectangle
@@ -59,14 +64,21 @@ class Detector:
             rx = ry = 0
             input_frame = frame
 
-        results = self.model(input_frame, conf=self.conf_threshold)
+        # debug mode: lower internal threshold to see marginal detections
+        internal_conf = 0.05 if self.debug else self.conf_threshold
+        results = self.model(input_frame, conf=internal_conf)
         boxes = results[0].boxes
 
         self.selected_ball = None
         self._box = None
+        self._debug_max_conf = 0.0
+        self._debug_raw_count = 0
 
         if boxes is None or len(boxes) == 0:
             return None
+
+        self._debug_raw_count = len(boxes)
+        self._debug_boxes = []  # (x1,y1,x2,y2,conf,below_threshold) for debug draw
 
         # --- inline best-ball (full-frame coordinates after offset) ---
         best_dy = 1e9
@@ -83,6 +95,17 @@ class Detector:
             if dy < 0:
                 dy = -dy
 
+            conf = box.conf[0].item()
+            if conf > self._debug_max_conf:
+                self._debug_max_conf = conf
+
+            below = conf < self.conf_threshold
+            if self.debug:
+                self._debug_boxes.append((x1, y1, x2, y2, conf, below))
+
+            if below:
+                continue  # skip for selection, but stored for debug-draw
+
             if dy < best_dy:
                 cx = (x1 + x2) // 2
                 dx = cx - cx_tgt
@@ -90,7 +113,6 @@ class Detector:
                     dx = -dx
                 best_dy = dy
                 best_dx = dx
-                conf = box.conf[0].item()
                 best_info = (cx, cy, x1, y1, x2, y2, conf)
             elif dy == best_dy:
                 cx = (x1 + x2) // 2
@@ -99,7 +121,6 @@ class Detector:
                     dx = -dx
                 if dx < best_dx:
                     best_dx = dx
-                    conf = box.conf[0].item()
                     best_info = (cx, cy, x1, y1, x2, y2, conf)
 
         if best_info is None:
@@ -113,12 +134,18 @@ class Detector:
     # ------------------------------------------------------------------
     def draw(self, frame):
         """
-        Draw ROI outline + selected ball directly on *frame* (no copy).
+        Draw ROI outline + selected ball on *frame* (no copy).
+
+        Debug mode: also draws all raw YOLO boxes with color coding:
+          green  = selected (above threshold)
+          yellow = above threshold, not selected
+          red    = below threshold (hidden in normal mode)
         """
+        fc = self.frame_center
+
         # --- ROI outline (dashed) ---
         if self.roi is not None:
             rx, ry, rw, rh = self.roi
-            # draw four dashed edges with short line segments
             for x in range(rx, rx + rw, 16):
                 self._line(frame, (x, ry), (min(x + 8, rx + rw), ry), (200, 200, 200), 1)
                 self._line(frame, (x, ry + rh), (min(x + 8, rx + rw), ry + rh), (200, 200, 200), 1)
@@ -126,24 +153,48 @@ class Detector:
                 self._line(frame, (rx, y), (rx, min(y + 8, ry + rh)), (200, 200, 200), 1)
                 self._line(frame, (rx + rw, y), (rx + rw, min(y + 8, ry + rh)), (200, 200, 200), 1)
 
-        # --- frame center crosshair (2 lines, faster than drawMarker) ---
-        fc = self.frame_center
+        # --- frame center crosshair ---
         if fc is not None:
             fx, fy = fc
             self._line(frame, (fx - 12, fy), (fx + 12, fy), (0, 0, 255), 2)
             self._line(frame, (fx, fy - 12), (fx, fy + 12), (0, 0, 255), 2)
 
-        # --- no detection ---
+        # --- debug: draw all raw boxes ---
+        if self.debug and hasattr(self, '_debug_boxes'):
+            for x1, y1, x2, y2, conf, below in self._debug_boxes:
+                selected = (
+                    self._box is not None
+                    and x1 == self._box[0] and y1 == self._box[1]
+                    and x2 == self._box[2] and y2 == self._box[3]
+                )
+                if selected:
+                    continue  # drawn below with highlight
+                if below:
+                    color, thick = (0, 0, 255), 1     # red: below threshold
+                else:
+                    color, thick = (0, 200, 255), 1   # yellow: above threshold, not selected
+                self._rect(frame, (x1, y1), (x2, y2), color, thick)
+                self._putText(frame, f'{conf:.2f}', (x1, y1 - 8),
+                              self._font, 0.35, color, 1)
+
+        # --- no selected ball ---
         box = self._box
         if box is None:
-            self._putText(frame, 'No detection', (10, 60),
-                          self._font, 0.7, (0, 0, 255), 2)
+            if self.debug:
+                self._putText(
+                    frame,
+                    f'No select | max conf: {self._debug_max_conf:.2f} | raw: {self._debug_raw_count}',
+                    (10, 60), self._font, 0.5, (0, 0, 255), 1,
+                )
+            else:
+                self._putText(frame, 'No detection', (10, 60),
+                              self._font, 0.7, (0, 0, 255), 2)
             return frame
 
         x1, y1, x2, y2, _ = box
         cx, cy = self.selected_ball
 
-        # --- green bbox ---
+        # --- green bbox (selected) ---
         self._rect(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
         # --- center dot + ring ---
@@ -157,6 +208,14 @@ class Detector:
         # --- coordinate label ---
         self._putText(frame, f'({cx},{cy})', (cx + 12, cy - 8),
                       self._font, 0.4, (0, 255, 0), 1)
+
+        # --- debug overlay ---
+        if self.debug:
+            self._putText(
+                frame,
+                f'max conf: {self._debug_max_conf:.2f} | raw: {self._debug_raw_count} | sel: ({cx},{cy})',
+                (10, 60), self._font, 0.45, (0, 255, 255), 1,
+            )
 
         return frame
 
@@ -177,9 +236,19 @@ if __name__ == "__main__":
 
     # ---- ROI: (x, y, w, h) — crop to pipe area ----
     # Tune these values to cover the pipe with a small margin
-    PIPE_ROI = (0, 180, 640, 200)  # example: horizontal strip, middle third
+    PIPE_ROI = (0, 180, 640, 200)
 
-    detector = Detector(model_path=_DEFAULT_MODEL, conf_threshold=0.20, roi=PIPE_ROI)
+    # ---- debug mode: set True to diagnose intermittent detection ----
+    # Shows ALL raw YOLO boxes with color coding:
+    #   green  = selected ball (above threshold)
+    #   yellow = above threshold, not selected (other candidates)
+    #   red    = below threshold (might be the ball with low conf!)
+    # Watch the max conf value: if it oscillates 0.10–0.30, your threshold
+    # is too close to the ball's typical confidence.
+    DEBUG = True
+
+    detector = Detector(model_path=_DEFAULT_MODEL, conf_threshold=0.20,
+                        roi=PIPE_ROI, debug=DEBUG)
 
     fps_last = 0
     fps_timer = time.time()
