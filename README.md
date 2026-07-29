@@ -1,1 +1,13 @@
-source /home/radxa/elc26_test/.venv/bin/activate
+source .venv/bin/activate
+
+# 进入项目目录
+cd ~/elc26_test
+
+# 激活虚拟环境
+source .venv/bin/activate
+
+# 确认激活成功（提示符前应该显示 (elc26-test)）
+# 如果没显示，可以手动检查
+which python  # 应该显示 /home/radxa/elc26_test/.venv/bin/python
+
+python src/vision/main.py

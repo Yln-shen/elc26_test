@@ -4,7 +4,7 @@ import time
 from detector import Detector
 from camera import Camera
 from tracker import Tracker
-from urat import UART 
+from urat import UARTSender
 
 # ---- paths ----
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
