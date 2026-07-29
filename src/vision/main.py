@@ -26,12 +26,18 @@ detector = Detector(model_path=_MODEL, conf_threshold=0.05, roi=PIPE_ROI)
 tracker = Tracker(use_kf=True, frame_add=35, Q_base=2.0, R=0.05)
 tracker.set_pipe_calibration(PIPE_LEFT_PX, PIPE_RIGHT_PX)
 
+# ---- UART ----
+UART_PORT = '/dev/ttyS3'
+uart = UARTSender(port=UART_PORT, baud=115200)
+uart_ok = uart.open()
+
 print("=" * 60)
 print("Steel Ball Tracker — 1D Kalman + mm output")
 print(f"Pipe:  left={PIPE_LEFT_PX} px  right={PIPE_RIGHT_PX} px")
 print(f"       centre={tracker.pipe_center_px:.0f} px  "
-        f"scale={tracker.mm_per_pixel:.4f} mm/px")
-print("Kalman: Q_base=2.0  R=0.3  frame_add=35")
+      f"scale={tracker.mm_per_pixel:.4f} mm/px")
+print(f"Kalman: Q_base=2.0  R=0.05  frame_add=35")
+print(f"UART:   {UART_PORT}  {'OPEN' if uart_ok else 'CLOSED — sudo chmod 666 ' + UART_PORT}")
 print("Press 'q' to quit, 'r' to reset")
 print("=" * 60)
 
@@ -75,6 +81,10 @@ while True:
         cv2.putText(frame, f"{tag}  {pos_mm:+.1f} mm", (10, 44),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
+        # ---- send to motor controller ----
+        if uart_ok:
+            uart.send(pos_mm)
+
     cv2.imshow("Tracker", frame)
 
     key = cv2.waitKey(1) & 0xFF
@@ -85,4 +95,5 @@ while True:
         print("Tracker reset")
 
 cam.cam.release()
+uart.close()
 cv2.destroyAllWindows()
