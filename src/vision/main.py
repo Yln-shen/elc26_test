@@ -85,6 +85,8 @@ while True:
         if uart_ok:
             uart.send(pos_mm)
 
+    # ---- UART TX indicator (top-right) ----
+
     cv2.imshow("Tracker", frame)
 
     key = cv2.waitKey(1) & 0xFF
