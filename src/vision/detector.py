@@ -3,7 +3,7 @@ import cv2
 import time
 import os
 from ultralytics import YOLO
-from src.vision.camera import Camera
+from camera import Camera
 
 
 class Detector:
@@ -245,9 +245,9 @@ if __name__ == "__main__":
     #   red    = below threshold (might be the ball with low conf!)
     # Watch the max conf value: if it oscillates 0.10–0.30, your threshold
     # is too close to the ball's typical confidence.
-    DEBUG = True
+    DEBUG = False  # set True to show all raw detections + conf
 
-    detector = Detector(model_path=_DEFAULT_MODEL, conf_threshold=0.20,
+    detector = Detector(model_path=_DEFAULT_MODEL, conf_threshold=0.10,
                         roi=PIPE_ROI, debug=DEBUG)
 
     fps_last = 0
