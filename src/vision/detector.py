@@ -247,7 +247,7 @@ if __name__ == "__main__":
     # is too close to the ball's typical confidence.
     DEBUG = False  # set True to show all raw detections + conf
 
-    detector = Detector(model_path=_DEFAULT_MODEL, conf_threshold=0.10,
+    detector = Detector(model_path=_DEFAULT_MODEL, conf_threshold=0.05,
                         roi=PIPE_ROI, debug=DEBUG)
 
     fps_last = 0
