@@ -21,7 +21,7 @@ class AdaptiveEKF1D:
     sudden jumps — the motor controller sees a smooth, continuous signal.
     """
 
-    def __init__(self, Q_base=2.0, R=0.3, dt=1 / 120.0):
+    def __init__(self, Q_base=2.0, R=0.05, dt=1 / 120.0):
         """
         Args:
             Q_base: base process-noise spectral density (px²/s³).

@@ -36,7 +36,7 @@ class Tracker:
     """
 
     def __init__(self, use_kf=True, frame_add=35,
-                 Q_base=2.0, R=0.3):
+                 Q_base=2.0, R=0.05):
         """
         Args:
             use_kf:    enable Kalman filtering
@@ -284,7 +284,7 @@ if __name__ == "__main__":
         cam = Camera(index=1)
 
     detector = Detector(model_path=_MODEL, conf_threshold=0.05, roi=PIPE_ROI)
-    tracker = Tracker(use_kf=True, frame_add=35, Q_base=2.0, R=0.3)
+    tracker = Tracker(use_kf=True, frame_add=35, Q_base=2.0, R=0.05)
     tracker.set_pipe_calibration(PIPE_LEFT_PX, PIPE_RIGHT_PX)
 
     print("=" * 60)
