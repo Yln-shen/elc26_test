@@ -222,8 +222,8 @@ class Tracker:
 if __name__ == "__main__":
     import os
     import cv2
-    from src.vision.detector import Detector
-    from src.vision.camera import Camera
+    from detector import Detector
+    from camera import Camera
 
     # ---- paths ----
     _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -237,7 +237,7 @@ if __name__ == "__main__":
 
     # ---- init ----
     try:
-        cam = Camera(index=3, width=640, height=480, fps=120)
+        cam = Camera(index=0, width=640, height=480, fps=120)
     except Exception:
         cam = Camera(index=1)
 
