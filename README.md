@@ -11,3 +11,7 @@ source .venv/bin/activate
 which python  # 应该显示 /home/radxa/elc26_test/.venv/bin/python
 
 python src/vision/main.py
+
+
+# 回退到上一个版本（dabe0d9 的上一个）
+git reset --hard HEAD~1
