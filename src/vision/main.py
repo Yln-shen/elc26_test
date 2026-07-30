@@ -6,6 +6,9 @@ from camera import Camera
 from tracker import Tracker
 from urat import UARTSender
 
+# ---- mode ----
+HEADLESS = False          # True = no display, pure detect+track+uart (max fps)
+
 # ---- paths ----
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(_THIS_DIR))
@@ -48,8 +51,9 @@ fps_last = 0
 fps_timer = time.time()
 frame_count = 0
 
-cv2.namedWindow("Tracker", cv2.WINDOW_NORMAL)
-cv2.resizeWindow("Tracker", 640, 480)
+if not HEADLESS:
+    cv2.namedWindow("Tracker", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Tracker", 640, 480)
 
 while True:
     ret, frame = cam.read()
@@ -67,13 +71,22 @@ while True:
     ball_x = ball_center[0] if ball_center is not None else None
     pos_mm = tracker.track(ball_x)
 
+    # ---- UART (always, even headless) ----
+    if pos_mm is not None:
+        uart.update(pos_mm)
+
+    if HEADLESS:
+        # bare-metal: no drawing, no imshow — print fps every 2s
+        if frame_count == 0:  # just after the 1s rollover
+            print(f"  fps: {fps_last}  |  pos: {pos_mm:+.1f} mm" if pos_mm else f"  fps: {fps_last}  |  LOST")
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+        continue
+
     # ---- draw ----
     detector.draw(frame)
-
-    # ---- tracker debug overlay (bottom-left info + filtered marker) ----
     tracker.draw_debug(frame)
 
-    # ---- top-left status (no overlap with detector's "No detection" at L60) ----
     cv2.putText(frame, f"FPS: {fps_last}", (10, 22),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
 
@@ -83,10 +96,6 @@ while True:
         cv2.putText(frame, f"{tag}  {pos_mm:+.1f} mm", (10, 44),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-        # ---- post latest value → sender thread transmits at 1 kHz ----
-        uart.update(pos_mm)
-
-    # ---- UART TX indicator (top-right) ----
     tx_x = frame.shape[1] - 55
     if uart_ok:
         cv2.circle(frame, (tx_x - 10, 20), 5, (0, 255, 0), -1)
