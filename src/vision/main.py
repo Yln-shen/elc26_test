@@ -13,11 +13,10 @@ HEADLESS = False          # True = no display, pure detect+track+uart (max fps)
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(_THIS_DIR))
 _MODEL = os.path.join(_PROJECT_ROOT, 'src', 'yolo_det', 'best_rknn_model')
+_CALIB = os.path.join(_PROJECT_ROOT, 'config', 'pipe_calib.json')
 
 # ---- ROI + calibration (tune after rig is assembled) ----
 PIPE_ROI = (0, 180, 640, 200)
-PIPE_LEFT_PX = 80                        # pipe left  end in image
-PIPE_RIGHT_PX = 560                      # pipe right end in image
 
 # ---- init ----
 try:
@@ -26,8 +25,7 @@ except Exception:
     cam = Camera(index=1)
 
 detector = Detector(model_path=_MODEL, conf_threshold=0.05, roi=PIPE_ROI)
-tracker = Tracker(use_kf=True, frame_add=35, Q_base=2.0, R=0.05)
-tracker.set_pipe_calibration(PIPE_LEFT_PX, PIPE_RIGHT_PX)
+tracker = Tracker(calib_path=_CALIB, use_kf=True, frame_add=35, Q_base=2.0, R=0.05)
 
 # ---- UART ----
 UART_PORT = '/dev/ttyS3'
@@ -38,47 +36,50 @@ if uart_ok:
 
 print("=" * 60)
 print("Steel Ball Tracker — 1D Kalman + mm output")
-print(f"Pipe:  left={PIPE_LEFT_PX} px  right={PIPE_RIGHT_PX} px")
-print(f"       centre={tracker.pipe_center_px:.0f} px  "
-      f"scale={tracker.mm_per_pixel:.4f} mm/px")
+print(f"Calib:  {tracker.calib.info()}")
 print(f"Kalman: Q_base=2.0  R=0.05  frame_add=35")
 print(f"UART:   {UART_PORT}  {'1 kHz' if uart_ok else 'CLOSED'}")
 print("Press 'q' to quit, 'r' to reset")
 print("=" * 60)
 
-# ---- FPS ----
+# ---- stats ----
 fps_last = 0
-fps_timer = time.time()
+fps_timer = time.perf_counter()
 frame_count = 0
+total_latency = 0.0
 
 if not HEADLESS:
     cv2.namedWindow("Tracker", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("Tracker", 640, 480)
 
 while True:
+    t0 = time.perf_counter()
+
     ret, frame = cam.read()
     if not ret:
         break
 
-    frame_count += 1
-    if time.time() - fps_timer >= 1.0:
-        fps_last = frame_count
-        frame_count = 0
-        fps_timer = time.time()
-
     # ---- detect → track ----
     ball_center = detector.detect(frame)
-    ball_x = ball_center[0] if ball_center is not None else None
-    pos_mm = tracker.track(ball_x)
+    pos_mm = tracker.track(ball_center)
 
-    # ---- UART (always, even headless) ----
+    # ---- UART ----
     if pos_mm is not None:
         uart.update(pos_mm)
 
+    t1 = time.perf_counter()
+    total_latency += (t1 - t0) * 1000  # ms
+    frame_count += 1
+
+    if time.perf_counter() - fps_timer >= 1.0:
+        avg_ms = total_latency / frame_count
+        fps_last = frame_count
+        print(f"  fps: {fps_last}  |  {avg_ms:5.1f} ms/frame  |  pos: {pos_mm:+.1f} mm" if pos_mm is not None else f"  fps: {fps_last}  |  {avg_ms:5.1f} ms/frame  |  LOST")
+        frame_count = 0
+        total_latency = 0.0
+        fps_timer = time.perf_counter()
+
     if HEADLESS:
-        # bare-metal: no drawing, no imshow — print fps every 2s
-        if frame_count == 0:  # just after the 1s rollover
-            print(f"  fps: {fps_last}  |  pos: {pos_mm:+.1f} mm" if pos_mm else f"  fps: {fps_last}  |  LOST")
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
         continue

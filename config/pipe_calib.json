@@ -1,0 +1,6 @@
+{
+  "pipe_length_mm": 234.0,
+  "corners": [[0, 0], [0, 0], [0, 0], [0, 0]],
+  "center_mark": [320, 240],
+  "cal_points": []
+}
