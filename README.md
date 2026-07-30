@@ -4,7 +4,7 @@ source .venv/bin/activate
 cd ~/elc26_test
 
 # 激活虚拟环境
-source .venv/bin/activate
+woxaindioasw
 
 # 确认激活成功（提示符前应该显示 (elc26-test)）
 # 如果没显示，可以手动检查

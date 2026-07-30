@@ -1,6 +1,6 @@
-description: Ultralytics YOLO26n model trained on /run/media/yln/3CE03B3FE03AFEA8/project_yolo/data/datasets/steel_balls.yaml
+description: Ultralytics YOLO26n model trained on /media/Windows-SSD/project_yolo/data/datasets/steel_balls.yaml
 author: Ultralytics
-date: '2026-07-30T20:11:11.834975+08:00'
+date: '2026-07-31T05:02:19.302376+08:00'
 version: 8.4.107
 license: AGPL-3.0 License (https://ultralytics.com/license)
 docs: https://docs.ultralytics.com

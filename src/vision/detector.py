@@ -17,7 +17,8 @@ class Detector:
     (y-axis first, x-axis tiebreaker).
     """
 
-    def __init__(self, model_path, conf_threshold=0.20, roi=None, debug=False):
+    def __init__(self, model_path, conf_threshold=0.20, roi=None, debug=False,
+                 center_offset=(0, 0)):
         """
         Args:
             model_path:    path to YOLO model directory or .rknn file
@@ -25,14 +26,19 @@ class Detector:
             roi:           (x, y, w, h) top-left + size in pixels, or None
             debug:         if True, lower internal threshold to 0.05 and
                            show all raw detections with confidence labels
+            center_offset: (dx, dy) pixel offset from image centre to
+                           physical pipe centre.  Positive dy = pipe is
+                           below image centre.  Crosshair + ball selection
+                           are shifted accordingly.
         """
         self.model = YOLO(model_path)
         self.conf_threshold = conf_threshold
         self.roi = roi
         self.debug = debug
+        self.center_offset = center_offset
         self.selected_ball = None     # (cx, cy) in full-frame coords
         self._box = None              # (x1, y1, x2, y2, conf) in full-frame coords
-        self.frame_center = None
+        self.frame_center = None      # image centre + center_offset
         self._debug_max_conf = 0.0    # highest conf seen this frame (even if filtered)
         self._debug_raw_count = 0     # raw box count before filtering
 
@@ -52,9 +58,11 @@ class Detector:
             (cx, cy) in full-frame coordinates, or None
         """
         h, w = frame.shape[:2]
-        self.frame_center = (w // 2, h // 2)
-        cy_tgt = self.frame_center[1]
-        cx_tgt = self.frame_center[0]
+        cx = w // 2 + self.center_offset[0]
+        cy = h // 2 + self.center_offset[1]
+        self.frame_center = (cx, cy)
+        cy_tgt = cy
+        cx_tgt = cx
 
         # --- ROI crop ---
         if self.roi is not None:
