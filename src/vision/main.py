@@ -30,6 +30,8 @@ tracker.set_pipe_calibration(PIPE_LEFT_PX, PIPE_RIGHT_PX)
 UART_PORT = '/dev/ttyS3'
 uart = UARTSender(port=UART_PORT, baud=115200)
 uart_ok = uart.open()
+if uart_ok:
+    uart.start(rate_hz=1000)
 
 print("=" * 60)
 print("Steel Ball Tracker — 1D Kalman + mm output")
@@ -37,7 +39,7 @@ print(f"Pipe:  left={PIPE_LEFT_PX} px  right={PIPE_RIGHT_PX} px")
 print(f"       centre={tracker.pipe_center_px:.0f} px  "
       f"scale={tracker.mm_per_pixel:.4f} mm/px")
 print(f"Kalman: Q_base=2.0  R=0.05  frame_add=35")
-print(f"UART:   {UART_PORT}  {'OPEN' if uart_ok else 'CLOSED — sudo chmod 666 ' + UART_PORT}")
+print(f"UART:   {UART_PORT}  {'1 kHz' if uart_ok else 'CLOSED'}")
 print("Press 'q' to quit, 'r' to reset")
 print("=" * 60)
 
@@ -81,11 +83,19 @@ while True:
         cv2.putText(frame, f"{tag}  {pos_mm:+.1f} mm", (10, 44),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-        # ---- send to motor controller ----
-        if uart_ok:
-            uart.send(pos_mm)
+        # ---- post latest value → sender thread transmits at 1 kHz ----
+        uart.update(pos_mm)
 
     # ---- UART TX indicator (top-right) ----
+    tx_x = frame.shape[1] - 55
+    if uart_ok:
+        cv2.circle(frame, (tx_x - 10, 20), 5, (0, 255, 0), -1)
+        cv2.putText(frame, "TX 1k", (tx_x, 26),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1)
+    else:
+        cv2.circle(frame, (tx_x - 10, 20), 5, (0, 0, 255), -1)
+        cv2.putText(frame, "TX OFF", (tx_x, 26),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1)
 
     cv2.imshow("Tracker", frame)
 
@@ -97,5 +107,5 @@ while True:
         print("Tracker reset")
 
 cam.cam.release()
-uart.close()
+uart.stop()
 cv2.destroyAllWindows()

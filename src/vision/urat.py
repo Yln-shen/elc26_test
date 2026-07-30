@@ -1,117 +1,168 @@
 # src/vision/urat.py
-# UART sender — transmits filtered steel-ball position (mm) to motor controller
+# High-speed threaded UART sender — 1 kHz updates for motor controller
 import serial
+import threading
+import time
 
 
 class UARTSender:
     """
-    Send steel-ball offset (mm) over UART to the pipe-balancing motor controller.
+    Threaded UART sender for steel-ball position (mm).
 
-    Protocol (ASCII, newline-terminated)::
+    - Main thread calls ``update(position_mm)`` at any rate (e.g. 120 Hz).
+    - A dedicated sender thread transmits the *latest* value at a fixed
+      rate (default 1000 Hz) so the motor controller always has fresh data,
+      even between camera frames.
+
+    Protocol (ASCII, fixed-width, newline-terminated)::
 
         +012.5\\n    ball 12.5 mm left  of centre
         -003.2\\n    ball  3.2 mm right of centre
-        +000.0\\n    ball at centre
-
-    Fixed-width (7 chars + newline) makes parsing trivial on the MCU side.
     """
 
-    def __init__(self, port='/dev/ttyS3', baud=115200, timeout=0.1):
+    PACKET_FMT = "{:+07.1f}\n"   # 7 chars + newline = 8 bytes
+
+    def __init__(self, port='/dev/ttyS3', baud=115200):
         """
         Args:
-            port:    serial device.  Rock4D UART3 → ``/dev/ttyS3``
-                     (also try ``/dev/ttyS3`` or ``/dev/ttyAMA3``)
-            baud:    baud rate — must match the receiver
-            timeout: write timeout (keep short for low latency)
+            port: serial device (e.g. /dev/ttyS3, /dev/ttyACM0)
+            baud: baud rate — 115200 @ 8-byte packets supports ~1400 Hz
         """
         self.port = port
         self.baud = baud
-        self.timeout = timeout
-        self.ser = None
+        self._serial = None
+        self._value = 0.0
+        self._has_update = False
+        self._lock = threading.Lock()
+        self._running = False
+        self._thread = None
+        self._tx_errors = 0
 
     # ------------------------------------------------------------------
+    # lifecycle
+    # ------------------------------------------------------------------
+
     def open(self):
-        """Open the serial port.  Returns True on success."""
+        """Open serial port. Returns True on success."""
         try:
-            self.ser = serial.Serial(
+            self._serial = serial.Serial(
                 self.port, self.baud,
-                timeout=self.timeout,
-                write_timeout=self.timeout,
+                timeout=0,
+                write_timeout=0,
             )
-            return self.ser.is_open
+            return True
         except serial.SerialException as e:
             print(f"[UART] failed to open {self.port}: {e}")
             return False
 
-    # ------------------------------------------------------------------
-    def close(self):
-        """Close the serial port."""
-        if self.ser is not None and self.ser.is_open:
-            self.ser.close()
-            self.ser = None
-
-    # ------------------------------------------------------------------
-    def send(self, position_mm):
-        """
-        Transmit the ball's offset from pipe centre.
-
-        Args:
-            position_mm: float — left = positive, right = negative
-
-        Returns:
-            True if the write completed without error.
-        """
-        if self.ser is None or not self.ser.is_open:
-            print("[UART] port not open — call open() first")
+    def start(self, rate_hz=1000):
+        """Launch the sender thread at *rate_hz* updates per second."""
+        if not self._serial or not self._serial.is_open:
+            print("[UART] cannot start — port not open")
             return False
+        self._running = True
+        self._thread = threading.Thread(target=self._run, args=(rate_hz,),
+                                        daemon=True, name="uart-tx")
+        self._thread.start()
+        return True
 
-        # fixed-width: sign + 3 int digits + dot + 1 frac digit = 7 chars + newline
-        # e.g. +012.5  -003.2  +000.0  -125.0
-        packet = f"{position_mm:+07.1f}\n".encode('ascii')
-
-        try:
-            self.ser.write(packet)
-            return True
-        except serial.SerialException as e:
-            print(f"[UART] write error: {e}")
-            return False
+    def stop(self):
+        """Stop the sender thread and close the port."""
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+        if self._serial is not None and self._serial.is_open:
+            self._serial.close()
+            self._serial = None
 
     # ------------------------------------------------------------------
+    # main-thread API
+    # ------------------------------------------------------------------
+
+    def update(self, position_mm):
+        """
+        Post the latest ball position.  Call this from the main loop
+        at whatever rate you have new data (typically 30–120 Hz).
+        """
+        with self._lock:
+            self._value = position_mm
+            self._has_update = True
+
+    # ------------------------------------------------------------------
+    # sender thread
+    # ------------------------------------------------------------------
+
+    def _run(self, rate_hz):
+        interval = 1.0 / rate_hz
+        next_tick = time.perf_counter()
+
+        while self._running:
+            # grab the latest value
+            with self._lock:
+                val = self._value
+
+            packet = self.PACKET_FMT.format(val).encode('ascii')
+
+            try:
+                self._serial.write(packet)
+            except serial.SerialException:
+                self._tx_errors += 1
+
+            # ---- precise timing: sleep + spin-wait ----
+            next_tick += interval
+            now = time.perf_counter()
+            remaining = next_tick - now
+
+            if remaining > 0.0005:
+                # sleep for all but the last 200 µs
+                time.sleep(remaining - 0.0002)
+            if remaining > 0:
+                # spin-wait the final slice for µs precision
+                while time.perf_counter() < next_tick:
+                    pass
+            else:
+                # missed the tick — reset to next interval, no burst
+                next_tick = time.perf_counter() + interval
+
+    # ------------------------------------------------------------------
+    # diagnostics
+    # ------------------------------------------------------------------
+
+    @property
+    def tx_errors(self):
+        return self._tx_errors
+
     @property
     def is_open(self):
-        return self.ser is not None and self.ser.is_open
+        return self._serial is not None and self._serial.is_open
 
 
 # ============================================================================
-# Standalone test — sends dummy position values
+# Standalone test
 # ============================================================================
 if __name__ == "__main__":
-    import time
     import math
 
-    PORT = '/dev/ttyS3'  # Rock4D UART3 — adjust if needed
+    PORT = '/dev/ttyS3'
 
     uart = UARTSender(port=PORT, baud=115200)
-
     if not uart.open():
-        print(f"Cannot open {PORT}.  Check:")
-        print("  ls -l /dev/tty*")
-        print("  sudo chmod 666 /dev/ttyS3")
+        print(f"Cannot open {PORT}")
         exit(1)
 
-    print(f"[UART] {PORT} open — sending test pattern (Ctrl-C to stop)")
+    uart.start(rate_hz=1000)
+    print(f"[UART] {PORT} — sending at 1000 Hz (Ctrl-C to stop)")
 
     try:
-        t0 = time.time()
+        t0 = time.perf_counter()
         while True:
-            elapsed = time.time() - t0
-            # simulate a ball oscillating ±120 mm at 0.5 Hz
+            elapsed = time.perf_counter() - t0
             fake_mm = 120.0 * math.sin(2 * math.pi * 0.5 * elapsed)
-            ok = uart.send(fake_mm)
-            if ok:
-                print(f"  sent  {fake_mm:+07.1f} mm")
-            time.sleep(0.05)  # 20 Hz
+            uart.update(fake_mm)
+            time.sleep(0.008)  # simulate ~120 Hz camera
     except KeyboardInterrupt:
-        print("\n[DONE]")
+        pass
     finally:
-        uart.close()
+        uart.stop()
+        print(f"\n[DONE]  tx errors: {uart.tx_errors}")
