@@ -15,3 +15,10 @@ python src/vision/main.py
 
 # 回退到上一个版本（dabe0d9 的上一个）
 git reset --hard HEAD~1
+
+sudo systemctl stop elc26     # 停掉自启的服务（释放摄像头+UART）
+python src/vision/start.py    # 手动跑
+sudo systemctl start elc26    # 跑完恢复自启
+想看自启的实时输出
+
+journalctl -u elc26 -f        # 实时滚动日志，Ctrl+C 退出
