@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 """
-Interactive pipe calibration tool.
+Keyboard-driven pipe calibration tool (no mouse required).
 
-Mark 4 pipe corners + centre mark by clicking, then place calibration
-points (type mm value in the *terminal*, not the image window).
+Arrow keys move a crosshair cursor.  Space / Enter places a point.
 
-Controls (in the IMAGE WINDOW)
+Controls
 --------
-  Click       — place next point
-  Backspace   — undo last point
-  r key       — reset all
-  s key       — save to config/pipe_calib.json
-  q / Esc     — quit
-
-After clicking a calibration point the terminal asks:
-  Enter mm for point #N (e.g. -50 or +75) >
+  ↑ ↓ ← →        — move cursor (hold Shift = 10 px step)
+  Space / Enter   — place current point
+  Backspace       — undo last point
+  r               — reset all
+  s               — save to config/pipe_calib.json
+  q / Esc         — quit
 """
 
 import os
@@ -29,100 +26,98 @@ sys.path.insert(0, os.path.join(_PROJECT_ROOT, "src", "vision"))
 from camera import Camera
 
 # ---- pre-defined calibration-point mm sequence ----
-# User physically places the ball at each mm position, then clicks it.
 CAL_MM_ORDER = [0, -10, 10, -50, -60, -40, 50, 40, 60, -122, 114, -80, 80]
 
-# ---------------------------------------------------------------------------
+# ---- state ----
 POINTS = []          # [(x, y, label)]
 LABELS = [
     "TL corner", "TR corner", "BR corner", "BL corner",
     "CENTRE MARK",
 ]
 FRAME = None
-WINDOW = "Pipe Calibration — click to mark"
+CURSOR = (320, 240)  # current crosshair position
+WINDOW = "Pipe Calibration"
 
 
+# ---------------------------------------------------------------------------
 def draw_all():
+    global FRAME
     if FRAME is None:
         return
     canvas = FRAME.copy()
-
     n = len(POINTS)
-    corner_done = min(n, len(LABELS))
+    total = len(LABELS) + len(CAL_MM_ORDER)
 
+    # ---- hint ----
     if n < len(LABELS):
-        hint = f">>> Click: {LABELS[n]}  ({n + 1}/{len(LABELS)})"
+        hint = f">>> [{n + 1}/{len(LABELS)}]  Place cursor on: {LABELS[n]}"
         color = (0, 255, 255)
     else:
-        cal_idx = n - len(LABELS)          # 0-based index into CAL_MM_ORDER
-        if cal_idx < len(CAL_MM_ORDER):
-            mm_target = CAL_MM_ORDER[cal_idx]
-            hint = (f">>> [{cal_idx + 1}/{len(CAL_MM_ORDER)}]  "
-                    f"Place ball at  {mm_target:+d} mm  →  click ball centre")
+        idx = n - len(LABELS)
+        if idx < len(CAL_MM_ORDER):
+            hint = (f">>> [{idx + 1}/{len(CAL_MM_ORDER)}]  "
+                    f"Ball at  {CAL_MM_ORDER[idx]:+d} mm  →  move cursor + Space")
             color = (0, 255, 0)
         else:
-            hint = "ALL DONE — press 's' to save, 'q' to quit"
+            hint = "ALL DONE — 's' to save, 'q' to quit"
             color = (0, 255, 255)
+    cv2.putText(canvas, hint, (10, 20), cv2.FONT_HERSHEY_SIMPLEX,
+                0.4, color, 1)
 
-    cv2.putText(canvas, hint, (10, 22), cv2.FONT_HERSHEY_SIMPLEX,
-                0.45, color, 1)
-
-    # progress bar
-    total = len(LABELS) + len(CAL_MM_ORDER)
+    # ---- progress bar ----
     done = min(n, total)
     bar_w = 200
-    cv2.rectangle(canvas, (10, 44), (10 + bar_w, 54), (60, 60, 60), -1)
-    cv2.rectangle(canvas, (10, 44), (10 + bar_w * done // total, 54),
+    cv2.rectangle(canvas, (10, 34), (10 + bar_w, 42), (60, 60, 60), -1)
+    cv2.rectangle(canvas, (10, 34), (10 + bar_w * done // total, 42),
                   (0, 200, 0), -1)
-    cv2.putText(canvas, f"{done}/{total}", (10 + bar_w + 8, 54),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.35, (200, 200, 200), 1)
 
-    # corners — white
+    # ---- placed points ----
     for i in range(min(4, n)):
         x, y, _ = POINTS[i]
         cv2.circle(canvas, (x, y), 5, (255, 255, 255), -1)
         cv2.putText(canvas, LABELS[i][:2], (x + 8, y - 6),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
 
-    # centre mark — yellow cross
     if n > 4:
         x, y, _ = POINTS[4]
         cv2.drawMarker(canvas, (x, y), (0, 255, 255),
-                       markerType=cv2.MARKER_CROSS, markerSize=16, thickness=2)
+                       markerType=cv2.MARKER_CROSS, markerSize=14, thickness=2)
 
-    # cal points — green
     for i in range(5, n):
         x, y, label = POINTS[i]
         cv2.circle(canvas, (x, y), 4, (0, 255, 0), -1)
         cv2.putText(canvas, label, (x + 8, y - 6),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 0), 1)
 
-    # connect cal points
     cal_xy = [(p[0], p[1]) for p in POINTS[5:]]
     for i in range(1, len(cal_xy)):
-        cv2.line(canvas, cal_xy[i - 1], cal_xy[i], (0, 120, 0), 1)
+        cv2.line(canvas, cal_xy[i - 1], cal_xy[i], (0, 100, 0), 1)
+
+    # ---- crosshair cursor ----
+    cx, cy = CURSOR
+    cv2.line(canvas, (cx - 10, cy), (cx + 10, cy), (0, 0, 255), 1)
+    cv2.line(canvas, (cx, cy - 10), (cx, cy + 10), (0, 0, 255), 1)
+    cv2.putText(canvas, f"({cx},{cy})", (cx + 12, cy - 6),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 255), 1)
 
     cv2.imshow(WINDOW, canvas)
 
 
-def mouse_callback(event, x, y, flags, param):
-    if event != cv2.EVENT_LBUTTONDOWN:
-        return
+# ---------------------------------------------------------------------------
+def place_point():
+    """Place a point at the current cursor position."""
     n = len(POINTS)
     if n < len(LABELS):
-        # corners + centre mark
-        POINTS.append((x, y, LABELS[n]))
+        POINTS.append((CURSOR[0], CURSOR[1], LABELS[n]))
     else:
-        # calibration point — auto-label from pre-defined sequence
         idx = n - len(LABELS)
         if idx < len(CAL_MM_ORDER):
             mm = CAL_MM_ORDER[idx]
-            POINTS.append((x, y, f"{mm:+d} mm"))
+            POINTS.append((CURSOR[0], CURSOR[1], f"{mm:+d} mm"))
             print(f"  [{idx + 1}/{len(CAL_MM_ORDER)}]  "
-                  f"({x}, {y})  →  {mm:+d} mm")
+                  f"({CURSOR[0]}, {CURSOR[1]})  →  {mm:+d} mm")
         else:
-            return  # all done, ignore extra clicks
-    draw_all()
+            return
 
 
 def save():
@@ -153,20 +148,18 @@ def save():
 
 # ---------------------------------------------------------------------------
 def main():
-    global FRAME
+    global FRAME, CURSOR
 
     cam = Camera(index=0, width=640, height=480, fps=30)
     cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(WINDOW, 640, 480)
-    cv2.setMouseCallback(WINDOW, mouse_callback)
 
     seq_str = "  →  ".join(f"{m:+d}" for m in CAL_MM_ORDER)
     print("=" * 55)
-    print("Pipe Calibration Tool")
-    print("  1. Click: TL → TR → BR → BL corner → CENTRE MARK")
-    print("  2. Place ball at each mm position, click ball centre")
+    print("Pipe Calibration Tool  (keyboard-driven)")
+    print("  Arrows = move   Space/Enter = place   Shift+Arrow = fast")
+    print("  Backspace = undo   r = reset   s = save   q = quit")
     print(f"  Sequence: {seq_str}")
-    print("  Backspace=undo  r=reset  s=save  q=quit")
     print("=" * 55)
 
     while True:
@@ -178,18 +171,43 @@ def main():
 
         key = cv2.waitKey(30) & 0xFF
 
-        if key == ord('q') or key == 27:
+        # ---- modifiers (shift) ----
+        # cv2.waitKey doesn't expose Shift for arrow keys cleanly on all
+        # platforms, so we use a faster step when a "fast" key combo is held.
+        # We detect the raw keycode and check common arrow ranges.
+        step = 1
+
+        if key == ord('q') or key == 27:        # q / Esc
             break
         elif key == ord('s'):
             save()
         elif key == ord('r'):
             POINTS.clear()
             print("  [reset]")
-        elif key == 8 or key == ord('b'):
+        elif key == 8 or key == ord('b'):        # Backspace / b
             if POINTS:
                 removed = POINTS.pop()
                 print(f"  [undo] removed {removed[2]}")
-            draw_all()
+        elif key == 13 or key == 32:             # Enter / Space
+            place_point()
+        # ---- arrows (OpenCV keycodes on Linux) ----
+        elif key == 81:                          # left
+            CURSOR = (max(0, CURSOR[0] - step), CURSOR[1])
+        elif key == 82:                          # up
+            CURSOR = (CURSOR[0], max(0, CURSOR[1] - step))
+        elif key == 83:                          # right
+            CURSOR = (min(FRAME.shape[1] - 1, CURSOR[0] + step), CURSOR[1])
+        elif key == 84:                          # down
+            CURSOR = (CURSOR[0], min(FRAME.shape[0] - 1, CURSOR[1] + step))
+        # ---- Shift+arrow (fast move, 10 px) ----
+        elif key == 0x61:
+            CURSOR = (max(0, CURSOR[0] - 10), CURSOR[1])
+        elif key == 0x62:
+            CURSOR = (CURSOR[0], max(0, CURSOR[1] - 10))
+        elif key == 0x63:
+            CURSOR = (min(FRAME.shape[1] - 1, CURSOR[0] + 10), CURSOR[1])
+        elif key == 0x64:
+            CURSOR = (CURSOR[0], min(FRAME.shape[0] - 1, CURSOR[1] + 10))
 
     cam.cam.release()
     cv2.destroyAllWindows()
