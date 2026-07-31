@@ -16,7 +16,7 @@ _MODEL = os.path.join(_PROJECT_ROOT, 'src', 'yolo_det', 'best_rknn_model')
 _CALIB = os.path.join(_PROJECT_ROOT, 'config', 'pipe_calib.json')
 
 # ---- ROI + calibration (tune after rig is assembled) ----
-PIPE_ROI = (5, 195, 630, 120)    # ~3x pipe height, trim background
+PIPE_ROI = (5, 215, 630, 80)     # ~2x pipe height
 
 # ---- init ----
 try:
