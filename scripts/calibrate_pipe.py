@@ -22,11 +22,15 @@ import sys
 import json
 import cv2
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+__PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CALIB_PATH = os.path.join(_PROJECT_ROOT, "config", "pipe_calib.json")
 
 sys.path.insert(0, os.path.join(_PROJECT_ROOT, "src", "vision"))
 from camera import Camera
+
+# ---- pre-defined calibration-point mm sequence ----
+# User physically places the ball at each mm position, then clicks it.
+CAL_MM_ORDER = [0, -10, 10, -50, -60, -40, 50, 40, 60, -122, 114, -80, 80]
 
 # ---------------------------------------------------------------------------
 POINTS = []          # [(x, y, label)]
@@ -44,17 +48,34 @@ def draw_all():
     canvas = FRAME.copy()
 
     n = len(POINTS)
+    corner_done = min(n, len(LABELS))
+
     if n < len(LABELS):
         hint = f">>> Click: {LABELS[n]}  ({n + 1}/{len(LABELS)})"
         color = (0, 255, 255)
     else:
-        hint = ">>> Click cal point, then type mm in TERMINAL (s=save q=quit)"
-        color = (0, 255, 0)
+        cal_idx = n - len(LABELS)          # 0-based index into CAL_MM_ORDER
+        if cal_idx < len(CAL_MM_ORDER):
+            mm_target = CAL_MM_ORDER[cal_idx]
+            hint = (f">>> [{cal_idx + 1}/{len(CAL_MM_ORDER)}]  "
+                    f"Place ball at  {mm_target:+d} mm  →  click ball centre")
+            color = (0, 255, 0)
+        else:
+            hint = "ALL DONE — press 's' to save, 'q' to quit"
+            color = (0, 255, 255)
 
     cv2.putText(canvas, hint, (10, 22), cv2.FONT_HERSHEY_SIMPLEX,
                 0.45, color, 1)
-    cv2.putText(canvas, f"Points: {len(POINTS)}", (10, 42),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
+
+    # progress bar
+    total = len(LABELS) + len(CAL_MM_ORDER)
+    done = min(n, total)
+    bar_w = 200
+    cv2.rectangle(canvas, (10, 44), (10 + bar_w, 54), (60, 60, 60), -1)
+    cv2.rectangle(canvas, (10, 44), (10 + bar_w * done // total, 54),
+                  (0, 200, 0), -1)
+    cv2.putText(canvas, f"{done}/{total}", (10 + bar_w + 8, 54),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.35, (200, 200, 200), 1)
 
     # corners — white
     for i in range(min(4, n)):
@@ -89,9 +110,18 @@ def mouse_callback(event, x, y, flags, param):
         return
     n = len(POINTS)
     if n < len(LABELS):
+        # corners + centre mark
         POINTS.append((x, y, LABELS[n]))
     else:
-        POINTS.append((x, y, "???"))
+        # calibration point — auto-label from pre-defined sequence
+        idx = n - len(LABELS)
+        if idx < len(CAL_MM_ORDER):
+            mm = CAL_MM_ORDER[idx]
+            POINTS.append((x, y, f"{mm:+d} mm"))
+            print(f"  [{idx + 1}/{len(CAL_MM_ORDER)}]  "
+                  f"({x}, {y})  →  {mm:+d} mm")
+        else:
+            return  # all done, ignore extra clicks
     draw_all()
 
 
@@ -130,10 +160,12 @@ def main():
     cv2.resizeWindow(WINDOW, 640, 480)
     cv2.setMouseCallback(WINDOW, mouse_callback)
 
+    seq_str = "  →  ".join(f"{m:+d}" for m in CAL_MM_ORDER)
     print("=" * 55)
     print("Pipe Calibration Tool")
     print("  1. Click: TL → TR → BR → BL corner → CENTRE MARK")
-    print("  2. Click cal points → terminal asks for mm value")
+    print("  2. Place ball at each mm position, click ball centre")
+    print(f"  Sequence: {seq_str}")
     print("  Backspace=undo  r=reset  s=save  q=quit")
     print("=" * 55)
 
@@ -143,23 +175,6 @@ def main():
             break
         FRAME = frame
         draw_all()
-
-        # ---- handle newly-added cal point (prompt in terminal) ----
-        if len(POINTS) > len(LABELS):
-            last = POINTS[-1]
-            if last[2] == "???":   # not yet labelled
-                try:
-                    raw = input(
-                        f"  Enter mm for cal point #{len(POINTS) - len(LABELS)} "
-                        f"at ({last[0]}, {last[1]}): "
-                    ).strip()
-                    mm = float(raw)
-                    POINTS[-1] = (last[0], last[1], f"{mm:+.0f} mm")
-                    print(f"    → set to {mm:+.0f} mm")
-                except (ValueError, EOFError):
-                    POINTS.pop()
-                    print("    cancelled")
-                draw_all()
 
         key = cv2.waitKey(30) & 0xFF
 
