@@ -24,7 +24,12 @@ try:
 except Exception:
     cam = Camera(index=1)
 
-detector = Detector(model_path=_MODEL, conf_threshold=0.05, roi=PIPE_ROI)
+# CENTER_OFFSET = (calib_center_mark - image_center)
+# calib centre = (299, 256),  image centre = (320, 240) → offset = (-21, +16)
+CENTER_OFFSET = (-21, 16)
+
+detector = Detector(model_path=_MODEL, conf_threshold=0.05, roi=PIPE_ROI,
+                    center_offset=CENTER_OFFSET)
 tracker = Tracker(calib_path=_CALIB, use_kf=True, frame_add=35, Q_base=2.0, R=0.05)
 
 # ---- UART ----
