@@ -34,7 +34,7 @@ if __name__ == "__main__":
     gpio = GPIO(chip_path='/dev/gpiochip4', line_offset=22, consumer='my-led')
     print("高电平")
     gpio.on()
-    time.sleep(10)
+    time.sleep(3)
     print("低电平")
     gpio.off()
     time.sleep(1)

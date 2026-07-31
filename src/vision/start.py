@@ -5,6 +5,7 @@ from detector import Detector
 from camera import Camera
 from tracker import Tracker
 from urat import UARTSender
+from gpio import GPIO
 
 # ---- paths ----
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -25,6 +26,8 @@ except Exception:
 detector = Detector(model_path=_MODEL, conf_threshold=0.05, roi=PIPE_ROI,
                     center_offset=CENTER_OFFSET)
 tracker = Tracker(calib_path=_CALIB, use_kf=True, frame_add=35, Q_base=2.0, R=0.05)
+
+gpio = GPIO(chip_path='/dev/gpiochip4', line_offset=22, consumer='my-led')
 
 # ---- UART ----
 UART_PORT = '/dev/ttyS3'
@@ -47,6 +50,7 @@ pos_mm = None
 tx_prev = 0
 
 while True:
+    gpio.on()
     t0 = time.perf_counter()
 
     ret, frame = cam.read()
@@ -76,6 +80,8 @@ while True:
         frame_count = 0
         total_latency = 0.0
         fps_timer = time.perf_counter()
-
+        
+gpio.off()        
+gpio.release()
 cam.cam.release()
 uart.stop()
