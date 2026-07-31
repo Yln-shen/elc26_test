@@ -49,39 +49,42 @@ total_latency = 0.0
 pos_mm = None
 tx_prev = 0
 
-while True:
-    gpio.on()
-    t0 = time.perf_counter()
+try:
+    while True:
+        gpio.on()
+        t0 = time.perf_counter()
 
-    ret, frame = cam.read()
-    if not ret:
-        break
+        ret, frame = cam.read()
+        if not ret:
+            break
 
-    ball_center = detector.detect(frame)
-    pos_mm = tracker.track(ball_center)
+        ball_center = detector.detect(frame)
+        pos_mm = tracker.track(ball_center)
 
-    if pos_mm is not None and uart_ok:
-        uart.update(pos_mm)
+        if pos_mm is not None and uart_ok:
+            uart.update(pos_mm)
 
-    t1 = time.perf_counter()
-    total_latency += (t1 - t0) * 1000
-    frame_count += 1
+        t1 = time.perf_counter()
+        total_latency += (t1 - t0) * 1000
+        frame_count += 1
 
-    if time.perf_counter() - fps_timer >= 1.0:
-        avg_ms = total_latency / frame_count
-        fps = frame_count
-        tx_now = uart.tx_count if uart_ok else 0
-        tx_rate = tx_now - tx_prev
-        tx_prev = tx_now
-        if pos_mm is not None:
-            print(f"  fps:{fps}  {avg_ms:5.1f}ms  tx:{tx_rate:4d}/s  pos:{pos_mm:+.1f}mm")
-        else:
-            print(f"  fps:{fps}  {avg_ms:5.1f}ms  tx:{tx_rate:4d}/s  LOST")
-        frame_count = 0
-        total_latency = 0.0
-        fps_timer = time.perf_counter()
-        
-gpio.off()        
-gpio.release()
-cam.cam.release()
-uart.stop()
+        if time.perf_counter() - fps_timer >= 1.0:
+            avg_ms = total_latency / frame_count
+            fps = frame_count
+            tx_now = uart.tx_count if uart_ok else 0
+            tx_rate = tx_now - tx_prev
+            tx_prev = tx_now
+            if pos_mm is not None:
+                print(f"  fps:{fps}  {avg_ms:5.1f}ms  tx:{tx_rate:4d}/s  pos:{pos_mm:+.1f}mm")
+            else:
+                print(f"  fps:{fps}  {avg_ms:5.1f}ms  tx:{tx_rate:4d}/s  LOST")
+            frame_count = 0
+            total_latency = 0.0
+            fps_timer = time.perf_counter()
+finally:
+    print("shutting down ...")
+    gpio.off()
+    gpio.release()
+    cam.cam.release()
+    uart.stop()
+    print("done")
