@@ -22,7 +22,7 @@ import sys
 import json
 import cv2
 
-__PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CALIB_PATH = os.path.join(_PROJECT_ROOT, "config", "pipe_calib.json")
 
 sys.path.insert(0, os.path.join(_PROJECT_ROOT, "src", "vision"))
