@@ -37,6 +37,7 @@ class UARTSender:
         self._running = False
         self._thread = None
         self._tx_errors = 0
+        self._tx_count = 0
 
     # ------------------------------------------------------------------
     # lifecycle
@@ -106,6 +107,7 @@ class UARTSender:
 
             try:
                 self._serial.write(packet)
+                self._tx_count += 1
             except serial.SerialException:
                 self._tx_errors += 1
 
@@ -132,6 +134,10 @@ class UARTSender:
     @property
     def tx_errors(self):
         return self._tx_errors
+
+    @property
+    def tx_count(self):
+        return self._tx_count
 
     @property
     def is_open(self):

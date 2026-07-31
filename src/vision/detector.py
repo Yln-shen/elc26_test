@@ -2,6 +2,7 @@
 import cv2
 import time
 import os
+import gc
 from ultralytics import YOLO
 from camera import Camera
 
@@ -74,7 +75,7 @@ class Detector:
 
         # debug mode: lower internal threshold to see marginal detections
         internal_conf = 0.05 if self.debug else self.conf_threshold
-        results = self.model(input_frame, conf=internal_conf)
+        results = self.model(input_frame, conf=internal_conf, verbose=False)
         boxes = results[0].boxes
 
         self.selected_ball = None
@@ -83,6 +84,7 @@ class Detector:
         self._debug_raw_count = 0
 
         if boxes is None or len(boxes) == 0:
+            del results
             return None
 
         self._debug_raw_count = len(boxes)
@@ -132,11 +134,20 @@ class Detector:
                     best_info = (cx, cy, x1, y1, x2, y2, conf)
 
         if best_info is None:
+            del results
             return None
 
         cx, cy, x1, y1, x2, y2, conf = best_info
         self.selected_ball = (cx, cy)
         self._box = (x1, y1, x2, y2, conf)
+
+        del results
+
+        # periodic GC — ultralytics leaks tensors over time
+        self._gc_counter = getattr(self, '_gc_counter', 0) + 1
+        if self._gc_counter % 100 == 0:
+            gc.collect()
+
         return self.selected_ball
 
     # ------------------------------------------------------------------
