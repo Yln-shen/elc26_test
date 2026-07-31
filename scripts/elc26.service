@@ -1,0 +1,16 @@
+[Unit]
+Description=elc26 Steel Ball Tracker
+After=multi-user.target
+
+[Service]
+Type=simple
+User=radxa
+WorkingDirectory=/home/radxa/elc26_test
+ExecStart=/home/radxa/elc26_test/.venv/bin/python src/vision/start.py
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
