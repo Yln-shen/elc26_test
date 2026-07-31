@@ -1,0 +1,13 @@
+2026-07-31 11:54:51,415  WARNING  GPIO  unavailable: No module named 'gpiod'  — heartbeat disabled
+2026-07-31 11:54:51,416  INFO   =============================================
+2026-07-31 11:54:51,416  INFO   elc26  start  —  headless production mode
+2026-07-31 11:54:51,417  INFO   model : /home/radxa/elc26_test/src/yolo_det/best_rknn_model
+2026-07-31 11:54:51,417  INFO   calib : /home/radxa/elc26_test/config/pipe_calib.json
+2026-07-31 11:54:51,417  INFO   uart  : /dev/ttyS3
+2026-07-31 11:54:51,417  INFO   logs  : /home/radxa/elc26_test/logs/start_20260731_115444.log
+2026-07-31 11:54:51,418  INFO   =============================================
+2026-07-31 11:54:51,422  WARNING  camera  retry  in  2.0s ...
+2026-07-31 11:54:53,427  WARNING  camera  retry  in  2.0s ...
+2026-07-31 11:54:55,432  WARNING  camera  retry  in  2.0s ...
+2026-07-31 11:54:56,585  INFO   shutdown  signal received
+2026-07-31 11:54:57,433  ERROR  camera  FAILED  —  exiting
